@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js'
 import { pieceValue, kingPosition, queenPosition, rookPosition, knightPosition, bishopPosition, pawnPosition } from "./tables.ts"
 
-export function EngineMove(fen: string, maxDepth = 3) {
+export function EngineMove(fen: string, maxDepth = 4) {
     const chess = new Chess(fen)
 
     const flipSquare = (square: string) => {
