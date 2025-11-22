@@ -9,6 +9,7 @@ export function Board(){
     const workerRef = useRef<Worker | null>(null)
     const engineStartTimeRef = useRef<number | null>(null)
     const engineSideRef = useRef<'w' | 'b' | null>(null)
+    const jobIDRef = useRef(0)
     const [position, updatePosition] = useState(chess.fen())
     const [playerColor, updatePlayerColor] = useState<'w' | 'b'>('w')
     const [isThinking, updateIsThinking] = useState(false)
@@ -25,14 +26,17 @@ export function Board(){
             case 'blitz':
                 updateWhiteTime(180)
                 updateBlackTime(180)
+                updateDepth(4)
                 break
             case 'rapid':
                 updateWhiteTime(600)
                 updateBlackTime(600)
+                updateDepth(4)
                 break
             case 'unlimited':
                 updateWhiteTime(Infinity)
                 updateBlackTime(Infinity)
+                updateDepth(5)
                 break
         }
     }
@@ -70,13 +74,16 @@ export function Board(){
         }, 1000)
 
         return () => clearInterval(interval)
-    }, [chess.turn(), isThinking, timeControl, gameOver])
+    }, [chess.turn(), timeControl, gameOver])
 
     useEffect(() => {
         workerRef.current = new EngineWorker()
 
         workerRef.current.onmessage = (event) => {
-            const { ok, response, error } = event.data
+            const { ok, response, error, jobID } = event.data
+
+            if (jobID === undefined || jobID !== jobIDRef.current)
+                return
 
             const start = engineStartTimeRef.current
             const side = engineSideRef.current
@@ -90,6 +97,7 @@ export function Board(){
 
             if (!ok) {
                 console.error("Engine Worker Error: ", error)
+                updateIsThinking(false)
                 return
             }
 
@@ -118,15 +126,17 @@ export function Board(){
             if (gameOver)
                 return
 
-            const { move, eval: evalScore } = response
+            const { move } = response
             try {
                 chess.move(move)
                 if (chess.isGameOver())
                     updateGameOver(true)
 
                 updatePosition(chess.fen())
+                updateIsThinking(false)
             } catch (error) {
                 console.log('Failed to make engine move:', error)
+                updateIsThinking(false)
             }
         }
 
@@ -140,11 +150,27 @@ export function Board(){
         if (!workerRef.current)
             return
 
+        const timeLeft = chess.turn() === 'w' ? whiteTime : blackTime
+        const totalTime = timeControl === 'blitz' ? 180 : timeControl === 'rapid' ? 600 : Infinity
+        const percentageDifference = Math.abs((timeLeft - totalTime) / totalTime) * 100
+
+        if (percentageDifference > 50 || timeLeft <= 60)
+            updateDepth(Math.random() < 0.5 ? 3 : 4)
+        if (percentageDifference > 80 || timeLeft <= 20)
+            updateDepth(3)
+        if (timeLeft <= 5)
+            updateDepth(2)
+
+
+        jobIDRef.current += 1
+        const jobID = jobIDRef.current
+
         engineSideRef.current = chess.turn() as 'w' | 'b'
         engineStartTimeRef.current = Date.now()
 
         updateIsThinking(true)
-        workerRef.current.postMessage({ fen: chess.fen(), depth })
+        workerRef.current.postMessage({ fen: chess.fen(), depth: depth, jobID: jobID })
+        console.log("Current depth: ", depth)
     }
 
     useEffect(() => {
