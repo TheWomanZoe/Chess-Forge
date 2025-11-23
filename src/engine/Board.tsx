@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Chess } from "chess.js"
 import { Chessboard, type PieceDropHandlerArgs, type ChessboardOptions} from 'react-chessboard'
 import EngineWorker from './engineWorker?worker'
+import "./Board.css"
 
 const chess = new Chess()
 
@@ -14,10 +15,32 @@ export function Board(){
     const [playerColor, updatePlayerColor] = useState<'w' | 'b'>('w')
     const [isThinking, updateIsThinking] = useState(false)
     const [timeControl, updateTimeControl] = useState<'blitz' | 'rapid' | 'unlimited'>('blitz')
-    const [whiteTime, updateWhiteTime] = useState(180)
-    const [blackTime, updateBlackTime] = useState(180)
+    const [whiteTime, updateWhiteTime] = useState(() => {
+        const saved = localStorage.getItem('GameState')
+        if (!saved)
+            return 180
+
+        try {
+            return JSON.parse(saved).whiteTime ?? 180
+        } catch {
+            return 180
+        }
+    })
+    const [blackTime, updateBlackTime] = useState(() => {
+        const saved = localStorage.getItem('GameState')
+        if (!saved)
+            return 180
+
+        try {
+            return JSON.parse(saved).blackTime ?? 180
+        } catch {
+            return 180
+        }
+    })
     const [gameOver, updateGameOver] = useState(false)
     const [depth, updateDepth] = useState(4)
+    const [startedGame, updateStartedGame] = useState(false)
+    let gameState: object = {}
 
     const applyTimeControl = (tc: 'blitz' | 'rapid' | 'unlimited') => {
         updateTimeControl(tc)
@@ -45,6 +68,8 @@ export function Board(){
         if (gameOver)
             return
         if (timeControl === 'unlimited')
+            return
+        if (!startedGame)
             return
 
         const interval = setInterval(() => {
@@ -74,7 +99,7 @@ export function Board(){
         }, 1000)
 
         return () => clearInterval(interval)
-    }, [chess.turn(), timeControl, gameOver])
+    }, [startedGame, playerColor, timeControl, gameOver])
 
     useEffect(() => {
         workerRef.current = new EngineWorker()
@@ -101,27 +126,53 @@ export function Board(){
                 return
             }
 
+            // TypeScript
             if (side === 'w') {
                 updateWhiteTime(prev => {
                     const remaining = prev - elapsedTime
-                    if (remaining <= 0) {
+                    const clamped = remaining <= 0 ? 0 : remaining
+
+                    if (clamped === 0) {
                         updateGameOver(true)
                         alert('Black wins on time!')
-                        return 0
                     }
-                    return remaining
+
+                    const newGameState = {
+                        fen: chess.fen(),
+                        playerColor,
+                        toMove: chess.turn(),
+                        timeControl,
+                        whiteTime: clamped,
+                        blackTime,
+                    }
+                    localStorage.setItem('GameState', JSON.stringify(newGameState))
+
+                    return clamped
                 })
             } else if (side === 'b') {
                 updateBlackTime(prev => {
                     const remaining = prev - elapsedTime
-                    if (remaining <= 0) {
+                    const clamped = remaining <= 0 ? 0 : remaining
+
+                    if (clamped === 0) {
                         updateGameOver(true)
                         alert('White wins on time!')
-                        return 0
                     }
-                    return remaining
+
+                    const newGameState = {
+                        fen: chess.fen(),
+                        playerColor,
+                        toMove: chess.turn(),
+                        timeControl,
+                        whiteTime,
+                        blackTime: clamped,
+                    }
+                    localStorage.setItem('GameState', JSON.stringify(newGameState))
+
+                    return clamped
                 })
             }
+
 
             if (gameOver)
                 return
@@ -134,6 +185,20 @@ export function Board(){
 
                 updatePosition(chess.fen())
                 updateIsThinking(false)
+
+                if (gameState)
+                    localStorage.removeItem('GameState')
+
+                gameState = {
+                    fen: chess.fen(),
+                    playerColor: playerColor,
+                    toMove: chess.turn(),
+                    timeControl: timeControl,
+                    whiteTime: whiteTime,
+                    blackTime: blackTime,
+                }
+
+                localStorage.setItem('GameState', JSON.stringify(gameState))
             } catch (error) {
                 console.log('Failed to make engine move:', error)
                 updateIsThinking(false)
@@ -143,6 +208,27 @@ export function Board(){
         return () => {
             workerRef.current?.terminate()
             workerRef.current = null
+        }
+    }, [])
+
+    useEffect(() => {
+        const saved = localStorage.getItem('GameState')
+        if (!saved)
+            return
+
+        try {
+            const gameState = JSON.parse(saved)
+            chess.load(gameState.fen)
+            updatePosition(chess.fen())
+            updatePlayerColor(gameState.playerColor)
+            updateTimeControl(gameState.timeControl)
+            updateWhiteTime(gameState.whiteTime)
+            updateBlackTime(gameState.blackTime)
+            updateStartedGame(true)
+            if (gameState.toMove !== playerColor)
+                EngineToPlay(depth)
+        } catch (error) {
+            console.error('Failed to load saved game state:', error)
         }
     }, [])
 
@@ -170,15 +256,17 @@ export function Board(){
 
         updateIsThinking(true)
         workerRef.current.postMessage({ fen: chess.fen(), depth: depth, jobID: jobID })
-        console.log("Current depth: ", depth)
     }
 
     useEffect(() => {
-        if (chess.turn() !== playerColor && !chess.isGameOver())
+        if (chess.turn() !== playerColor && !chess.isGameOver() && startedGame)
             EngineToPlay(depth)
-    }, [playerColor])
+    }, [playerColor, startedGame])
 
     const onDrop = ({sourceSquare, targetSquare}: PieceDropHandlerArgs) => {
+        if (!startedGame)
+            return false
+
         if (gameOver)
             return false
 
@@ -200,10 +288,26 @@ export function Board(){
 
             if (move) {
                 updatePosition(chess.fen())
+
+                if (gameState)
+                    localStorage.removeItem('GameState')
+
+                gameState = {
+                    fen: chess.fen(),
+                    playerColor: playerColor,
+                    toMove: chess.turn(),
+                    timeControl: timeControl,
+                    whiteTime: whiteTime,
+                    blackTime: blackTime,
+                }
+
+                localStorage.setItem('GameState', JSON.stringify(gameState))
+
                 EngineToPlay(depth)
             }
         } catch (error) {
-
+            console.error('Invalid move:', error)
+            return false
         }
 
         return false
@@ -246,7 +350,12 @@ export function Board(){
             <button onClick={SwitchColor}>
                 Switch to {playerColor === 'w' ? 'Black' : 'White'}
             </button>
-            <Chessboard options={options}/>
+            <button onClick={() => updateStartedGame(prev => !prev)}>
+                {startedGame ? 'Pause game' : 'Start game'}
+            </button>
+            <div id={"board"}>
+                <Chessboard options={options}/>
+            </div>
         </div>
     )
 }
