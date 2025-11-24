@@ -3,7 +3,7 @@ import './App.css'
 
 function App() {
     return(
-        <div id={'board'}>
+        <div>
             <Board />
         </div>
     )

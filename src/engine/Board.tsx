@@ -8,6 +8,7 @@ import "./Board.css"
 const chess = new Chess()
 
 export function Board() {
+    //variables and states
     const workerRef = useRef<Worker | null>(null)
     const engineStartTimeRef = useRef<number | null>(null)
     const engineSideRef = useRef<'w' | 'b' | null>(null)
@@ -56,9 +57,11 @@ export function Board() {
     const [moveHistory, updateMoveHistory] = useState<string[]>([])
     let gameState: object = {}
 
+    //controls the time setting
     const applyTimeControl = (tc: 'blitz' | 'rapid' | 'unlimited') => {
         updateTimeControl(tc)
 
+        //sets time based on selection
         switch (tc) {
             case 'blitz':
                 updateWhiteTime(180)
@@ -78,6 +81,7 @@ export function Board() {
         }
     }
 
+    //handles the timer countdown
     useEffect(() => {
         if (gameOver)
             return
@@ -86,6 +90,7 @@ export function Board() {
         if (!startedGame)
             return
 
+        //increments timer every second
         const interval = setInterval(() => {
             if (chess.turn() === playerColor) {
                 if (chess.turn() === 'w') {
@@ -115,6 +120,7 @@ export function Board() {
         return () => clearInterval(interval)
     }, [startedGame, playerColor, timeControl, gameOver])
 
+    //sets up the web worker for engine calculations
     useEffect(() => {
         workerRef.current = new EngineWorker()
 
@@ -140,6 +146,7 @@ export function Board() {
                 return
             }
 
+            //update time based on engine move duration and saves game state
             if (side === 'w') {
                 updateWhiteTime((prev: number) => {
                     const remaining = prev - elapsedTime
@@ -189,6 +196,7 @@ export function Board() {
             if (gameOver)
                 return
 
+            //makes the engine move
             const { move } = response
             try {
                 const result = chess.move(move)
@@ -226,6 +234,7 @@ export function Board() {
         }
     }, [])
 
+    //loads saved game state from localStorage
     useEffect(() => {
         const saved = localStorage.getItem('GameState')
         if (!saved)
@@ -251,6 +260,7 @@ export function Board() {
         }
     }, [])
 
+    //function for engine to make a move
     const EngineToPlay = (depth = 4) => {
         if (!workerRef.current)
             return
@@ -259,6 +269,7 @@ export function Board() {
         const totalTime = timeControl === 'blitz' ? 180 : timeControl === 'rapid' ? 600 : Infinity
         const percentageDifference = Math.abs((timeLeft - totalTime) / totalTime) * 100
 
+        //adjust depth based on time left
         if (percentageDifference > 50 || timeLeft <= 60)
             updateDepth(Math.random() < 0.5 ? 3 : 4)
         if (percentageDifference > 80 || timeLeft <= 20)
@@ -276,11 +287,13 @@ export function Board() {
         workerRef.current.postMessage({ fen: chess.fen(), depth: depth, jobID: jobID })
     }
 
+    //triggers engine move when it's engine's turn
     useEffect(() => {
         if (chess.turn() !== playerColor && !chess.isGameOver() && startedGame)
             EngineToPlay(depth)
     }, [playerColor, startedGame])
 
+    //handles piece drop events
     const onDrop = ({ sourceSquare, targetSquare }: PieceDropHandlerArgs) => {
         if (!startedGame)
             return false
@@ -307,6 +320,7 @@ export function Board() {
             if (move) {
                 updatePosition(chess.fen())
 
+                //updates history and game state
                 if (move.san)
                     updateMoveHistory((history) => [...history, move.san])
 
@@ -334,11 +348,13 @@ export function Board() {
         return false
     }
 
+    //handles game start from setup
     const handleStartGame = () => {
         updateShowSetup(false)
         updateStartedGame(true)
     }
 
+    //handles new game initialization
     const handleNewGame = () => {
         localStorage.removeItem('GameState')
         chess.reset()

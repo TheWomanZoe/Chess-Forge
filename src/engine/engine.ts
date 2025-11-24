@@ -4,12 +4,14 @@ import { pieceValue, kingPosition, queenPosition, rookPosition, knightPosition, 
 export function EngineMove(fen: string, maxDepth = 4) {
     const chess = new Chess(fen)
 
+    //mirrors the square from the middle of the board
     const flipSquare = (square: string) => {
         const file = square[0]
         const rank = parseInt(square[1], 10)
         return `${file}${9 - rank}`
     }
 
+    //evaluates the board position
     const evalPosition = (board: any[], engineColor: 'w' | 'b') => {
         let wTotal = 0
         let bTotal = 0
@@ -76,6 +78,7 @@ export function EngineMove(fen: string, maxDepth = 4) {
     const MATE_VALUE = 1000000
     const engineColor = chess.turn() as 'w' | 'b'
 
+    //alpha-beta pruning algorithm
     const alphaBeta = (depth: number, alpha: number, beta: number, isMaximizing: boolean): number => {
         if (chess.isGameOver()) {
             if (chess.isCheckmate()) {
@@ -138,6 +141,7 @@ export function EngineMove(fen: string, maxDepth = 4) {
     const possible = chess.moves()
     const movesMap = new Map<string, number>()
 
+    //evaluate all possible moves at the root level
     for (const move of possible) {
         chess.move(removeNotation(move))
 
@@ -151,6 +155,7 @@ export function EngineMove(fen: string, maxDepth = 4) {
         chess.undo()
     }
 
+    //select the best move
     let bestMoves: string[] = []
     let bestValue = -Infinity
     movesMap.forEach((value, key) => {
@@ -160,11 +165,13 @@ export function EngineMove(fen: string, maxDepth = 4) {
         } else if (value === bestValue) bestMoves.push(key)
     })
 
+    //randomly pick one of the best moves
     const bestMove = bestMoves.length ? bestMoves[Math.floor(Math.random() * bestMoves.length)] : ''
 
     if (!bestMove)
         return {move: '', eval: evalPosition(chess.board(), engineColor)}
 
+    //evaluate the final position after the best move and sends it back
     chess.move(removeNotation(bestMove))
     const finalEval = evalPosition(chess.board(), engineColor)
     chess.undo()

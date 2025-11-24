@@ -1,3 +1,4 @@
+//Piece value and position tables for chess engine evaluation
 export const pieceValue: {[key: string]: number} = {
     p: 10,
     n: 30,
