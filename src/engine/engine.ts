@@ -6,29 +6,26 @@ import { TranspositionTable } from "./transpositionTables.ts";
 const zobristKeys = new ZobristKeys()
 const transpositionTable = new TranspositionTable(64)
 
-export function EngineMove(fen: string, maxDepth = 4) {
-    const chess = new Chess(fen)
+//mirrors the square from the middle of the board
+const flipSquare = (square: string) => {
+    const file = square[0]
+    const rank = parseInt(square[1], 10)
+    return `${file}${9 - rank}`
+}
 
-    //mirrors the square from the middle of the board
-    const flipSquare = (square: string) => {
-        const file = square[0]
-        const rank = parseInt(square[1], 10)
-        return `${file}${9 - rank}`
-    }
+//evaluates the position
+export const evalPosition = (board: any[], engineColor: 'w' | 'b',chessInstance?: any, hash?: bigint) => {
+    let wTotal = 0
+    let bTotal = 0
 
-    //evaluates the board position
-    const evalPosition = (board: any[], engineColor: 'w' | 'b') => {
-        let wTotal = 0
-        let bTotal = 0
+    for (let i = 0; i < board.length; i++) {
+        for (let j = 0; j < board[i].length; j++) {
+            const piece = board[i][j]
+            if (!piece) continue
 
-        for (let i = 0; i < board.length; i++) {
-            for (let j = 0; j < board[i].length; j++) {
-                const piece = board[i][j]
-                if (!piece) continue
-
-                let positionalBonus = 0
-                if (piece.color === 'w') {
-                    switch (piece.type) {
+            let positionalBonus = 0
+            if (piece.color === 'w') {
+                switch (piece.type) {
                         case 'p':
                             positionalBonus = pawnPosition[piece.square];
                             break
@@ -48,10 +45,9 @@ export function EngineMove(fen: string, maxDepth = 4) {
                             positionalBonus = kingPosition[piece.square];
                             break
                     }
-
                     wTotal += pieceValue[piece.type] + positionalBonus
-                } else {
-                    switch (piece.type) {
+            } else {
+                switch (piece.type) {
                         case 'p':
                             positionalBonus = pawnPosition[flipSquare(piece.square)];
                             break
@@ -73,18 +69,50 @@ export function EngineMove(fen: string, maxDepth = 4) {
                     }
 
                     bTotal += pieceValue[piece.type] + positionalBonus
-                }
             }
         }
-        return engineColor === 'w' ? wTotal - bTotal : bTotal - wTotal
+    }
+    let finalScore =  engineColor === 'w' ? wTotal - bTotal : bTotal - wTotal
+
+    if (hash !== undefined && chessInstance) {
+        let complexity = 0
+
+        let pieceCount = 0
+        for (let i = 0; i < board.length; i++) {
+            for (let j = 0; j < board[i].length; j++) {
+                if (board[i][j]) pieceCount++
+            }
+        }
+
+        complexity += pieceCount * 2
+
+        const numberOfMoves = chessInstance.moves().length
+        complexity += numberOfMoves * 1.5
+        complexity = Math.min(complexity, 100)
+
+        const baseNoise = 1
+        const complexityNoise = (complexity / 100) * 2
+        const totalNoise = baseNoise + complexityNoise
+
+        const noiseSeed = Number(hash % 1000n)
+        const pseudoRandom = Math.sin(noiseSeed) * 10000
+        const noise = (pseudoRandom - Math.floor(pseudoRandom)) * totalNoise * 2 - totalNoise
+
+        finalScore += noise
     }
 
+    return finalScore
+}
+
+export function EngineMove(fen: string, maxDepth = 4) {
+    const chess = new Chess(fen)
+
     const removeNotation = (move: string) => move.replace(/[+#?!]+$/g, '')
-    const MATE_VALUE = 1000000
+    const MATE_VALUE = 1000000 // a very high value to represent checkmate
     const engineColor = chess.turn() as 'w' | 'b'
-    const takePriorityBonus = 50
-    const checkPriorityBonus = 40
-    const transpositionTablePriorityBonus = 1000
+    const takePriorityBonus = 50 // bonus for moves that capture a piece, to prioritize them in move ordering
+    const checkPriorityBonus = 40 // bonus for moves that give check, to prioritize them in move ordering
+    const transpositionTablePriorityBonus = 1000 // bonus for moves that are found in the transposition table, to prioritize them in move ordering
 
     //alpha-beta pruning algorithm
     const alphaBeta = (depth: number, alpha: number, beta: number, isMaximizing: boolean): number => {
@@ -108,7 +136,7 @@ export function EngineMove(fen: string, maxDepth = 4) {
         }
 
         if (depth === 0) {
-            const score = evalPosition(chess.board(), engineColor)
+            const score = evalPosition(chess.board(), engineColor, chess, hash)
 
             transpositionTable.store(hash, depth, score, 'exact')
             return score
@@ -126,7 +154,7 @@ export function EngineMove(fen: string, maxDepth = 4) {
                 orderScore += transpositionTablePriorityBonus
 
             chess.move(removeNotation(m))
-            orderScore += evalPosition(chess.board(), engineColor)
+            orderScore += evalPosition(chess.board(), engineColor, chess)
 
             if (m.includes('x')) orderScore += takePriorityBonus
             if (m.includes('+') || m.includes('#')) orderScore += checkPriorityBonus
@@ -225,6 +253,8 @@ export function EngineMove(fen: string, maxDepth = 4) {
     chess.move(removeNotation(best))
     const finalEval = evalPosition(chess.board(), engineColor)
     chess.undo()
+
+    console.log(finalEval)
 
     return {move: best, eval: finalEval}
 }
