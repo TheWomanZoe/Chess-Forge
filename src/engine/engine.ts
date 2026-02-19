@@ -1,5 +1,10 @@
 import { Chess } from 'chess.js'
 import { pieceValue, kingPosition, queenPosition, rookPosition, knightPosition, bishopPosition, pawnPosition } from "./tables.ts"
+import { ZobristKeys, computeZobristHash } from "./zobrist.ts"
+import { TranspositionTable } from "./transpositionTables.ts";
+
+const zobristKeys = new ZobristKeys()
+const transpositionTable = new TranspositionTable(64)
 
 export function EngineMove(fen: string, maxDepth = 4) {
     const chess = new Chess(fen)
@@ -77,36 +82,61 @@ export function EngineMove(fen: string, maxDepth = 4) {
     const removeNotation = (move: string) => move.replace(/[+#?!]+$/g, '')
     const MATE_VALUE = 1000000
     const engineColor = chess.turn() as 'w' | 'b'
+    const takePriorityBonus = 50
+    const checkPriorityBonus = 40
+    const transpositionTablePriorityBonus = 1000
 
     //alpha-beta pruning algorithm
     const alphaBeta = (depth: number, alpha: number, beta: number, isMaximizing: boolean): number => {
+        const hash = computeZobristHash(chess, zobristKeys)
+        const ttScore = transpositionTable.probe(hash, depth, alpha, beta)
+
+        if (ttScore !== null)
+            return ttScore
+
         if (chess.isGameOver()) {
             if (chess.isCheckmate()) {
                 const winner = chess.turn() === 'w' ? 'b' : 'w'
-
                 const mateDistance = (maxDepth - depth)
-                return (winner === engineColor) ? (MATE_VALUE - mateDistance) : -(MATE_VALUE - mateDistance)
+                const score = (winner === engineColor) ? (MATE_VALUE - mateDistance) : -(MATE_VALUE + mateDistance)
+
+                transpositionTable.store(hash, depth, score, 'exact')
+                return score
             }
 
             return 0
         }
 
-        if (depth === 0)
-            return evalPosition(chess.board(), engineColor)
+        if (depth === 0) {
+            const score = evalPosition(chess.board(), engineColor)
+
+            transpositionTable.store(hash, depth, score, 'exact')
+            return score
+        }
 
         const moves = chess.moves()
 
+        const TTbestMove = transpositionTable.getBestMove(hash)
+
         const scoredMoves: { m: string; score: number }[] = []
         for (const m of moves) {
-            chess.move(removeNotation(m))
-            let score = evalPosition(chess.board(), engineColor)
+            let orderScore = 0
 
-            if (m.includes('x')) score += 50
-            if (m.includes('+') || m.includes('#')) score += 40
+            if (TTbestMove && removeNotation(m) === TTbestMove)
+                orderScore += transpositionTablePriorityBonus
+
+            chess.move(removeNotation(m))
+            orderScore += evalPosition(chess.board(), engineColor)
+
+            if (m.includes('x')) orderScore += takePriorityBonus
+            if (m.includes('+') || m.includes('#')) orderScore += checkPriorityBonus
             chess.undo()
-            scoredMoves.push({m, score})
+            scoredMoves.push({m, score: orderScore})
         }
         scoredMoves.sort((a, b) => isMaximizing ? (b.score - a.score) : (a.score - b.score))
+
+        let bestMove: string | undefined
+        let flag: 'exact' | 'lowerbound' | 'upperbound' = 'upperbound'
 
         if (isMaximizing) {
             let value = -Infinity
@@ -115,12 +145,22 @@ export function EngineMove(fen: string, maxDepth = 4) {
                 const child = alphaBeta(depth - 1, alpha, beta, false)
                 chess.undo()
 
-                if (child > value) value = child
-                if (value > alpha) alpha = value
-                if (alpha >= beta)
+                if (child > value) {
+                    value = child
+                    bestMove = mv.m
+                }
+                if (value > alpha) {
+                    alpha = value
+                    flag = 'exact'
+                }
+                if (alpha >= beta) {
+                    transpositionTable.store(hash, depth, value, 'lowerbound', mv.m)
                     break
+                }
 
             }
+
+            transpositionTable.store(hash, depth, value, flag, bestMove)
             return value
         } else {
             let value = Infinity
@@ -129,11 +169,21 @@ export function EngineMove(fen: string, maxDepth = 4) {
                 const child = alphaBeta(depth - 1, alpha, beta, true)
                 chess.undo()
 
-                if (child < value) value = child
-                if (value < beta) beta = value
-                if (alpha >= beta)
+                if (child < value) {
+                    value = child
+                    bestMove = mv.m
+                }
+                if (value < beta) {
+                    beta = value
+                    flag = 'exact'
+                }
+                if (alpha >= beta) {
+                    transpositionTable.store(hash, depth, value, 'lowerbound', mv.m)
                     break
+                }
             }
+
+            transpositionTable.store(hash, depth, value, flag, bestMove)
             return value
         }
     }
@@ -166,15 +216,19 @@ export function EngineMove(fen: string, maxDepth = 4) {
     })
 
     //randomly pick one of the best moves
-    const bestMove = bestMoves.length ? bestMoves[Math.floor(Math.random() * bestMoves.length)] : ''
+    const best = bestMoves.length ? bestMoves[Math.floor(Math.random() * bestMoves.length)] : ''
 
-    if (!bestMove)
+    if (!best)
         return {move: '', eval: evalPosition(chess.board(), engineColor)}
 
     //evaluate the final position after the best move and sends it back
-    chess.move(removeNotation(bestMove))
+    chess.move(removeNotation(best))
     const finalEval = evalPosition(chess.board(), engineColor)
     chess.undo()
 
-    return {move: bestMove, eval: finalEval}
+    return {move: best, eval: finalEval}
+}
+
+export function ClearTranspositionTable() {
+    transpositionTable.clear()
 }
