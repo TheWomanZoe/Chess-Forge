@@ -71,8 +71,6 @@ export function computeZobristHash(chess: any, keys: ZobristKeys): bigint {
         }
     }
 
-    const castling = (chess as any).getCastlingRights ? (chess as any).getCastlingRights(chess.turn()) : null
-
     const fen = chess.fen()
     const castlingString = fen.split(' ')[2]
     if (castlingString.includes('K')) hash ^= keys.castling[0]
