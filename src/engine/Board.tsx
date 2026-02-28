@@ -4,6 +4,7 @@ import { Chess } from "chess.js"
 import { Chessboard, type PieceDropHandlerArgs, type ChessboardOptions } from 'react-chessboard'
 import EngineWorker from './engineWorker?worker'
 import "./Board.css"
+import { ClearTranspositionTable } from "./engine.ts"
 
 const chess = new Chess()
 
@@ -92,28 +93,24 @@ export function Board() {
 
         //increments timer every second
         const interval = setInterval(() => {
-            if (chess.turn() === playerColor) {
-                if (chess.turn() === 'w') {
-                    updateWhiteTime((time: number) => {
-                        if (time <= 1) {
-                            updateGameOver(true)
-                            alert('Black wins on time!')
-                            return 0
-                        }
-                        return time - 1
-                    })
-                }
-
-                if (chess.turn() === 'b') {
-                    updateBlackTime((time: number) => {
-                        if (time <= 1) {
-                            updateGameOver(true)
-                            alert('White wins on time!')
-                            return 0
-                        }
-                        return time - 1
-                    })
-                }
+            if (chess.turn() === 'w') {
+                updateWhiteTime((time: number) => {
+                    if (time <= 1) {
+                        updateGameOver(true)
+                        alert('Black wins on time!')
+                        return 0
+                    }
+                    return time - 1
+                })
+            } else {
+                updateBlackTime((time: number) => {
+                    if (time <= 1) {
+                        updateGameOver(true)
+                        alert('White wins on time!')
+                        return 0
+                    }
+                    return time - 1
+                })
             }
         }, 1000)
 
@@ -130,12 +127,6 @@ export function Board() {
             if (jobID === undefined || jobID !== jobIDRef.current)
                 return
 
-            const start = engineStartTimeRef.current
-            const side = engineSideRef.current
-            let elapsedTime = 0
-            if (start && side)
-                elapsedTime = Math.floor((Date.now() - start) / 1000)
-
             engineStartTimeRef.current = null
             engineSideRef.current = null
             updateIsThinking(false)
@@ -144,53 +135,6 @@ export function Board() {
                 console.error("Engine Worker Error: ", error)
                 updateIsThinking(false)
                 return
-            }
-
-            //update time based on engine move duration and saves game state
-            if (side === 'w') {
-                updateWhiteTime((prev: number) => {
-                    const remaining = prev - elapsedTime
-                    const clamped = remaining <= 0 ? 0 : remaining
-
-                    if (clamped === 0) {
-                        updateGameOver(true)
-                        alert('Black wins on time!')
-                    }
-
-                    const newGameState = {
-                        fen: chess.fen(),
-                        playerColor,
-                        toMove: chess.turn(),
-                        timeControl,
-                        whiteTime: clamped,
-                        blackTime,
-                    }
-                    localStorage.setItem('GameState', JSON.stringify(newGameState))
-
-                    return clamped
-                })
-            } else if (side === 'b') {
-                updateBlackTime((prev: number) => {
-                    const remaining = prev - elapsedTime
-                    const clamped = remaining <= 0 ? 0 : remaining
-
-                    if (clamped === 0) {
-                        updateGameOver(true)
-                        alert('White wins on time!')
-                    }
-
-                    const newGameState = {
-                        fen: chess.fen(),
-                        playerColor,
-                        toMove: chess.turn(),
-                        timeControl,
-                        whiteTime,
-                        blackTime: clamped,
-                    }
-                    localStorage.setItem('GameState', JSON.stringify(newGameState))
-
-                    return clamped
-                })
             }
 
             if (gameOver)
@@ -363,6 +307,7 @@ export function Board() {
         updateStartedGame(false)
         updateShowSetup(true)
         updateMoveHistory([])
+        ClearTranspositionTable()
     }
 
     const options: ChessboardOptions = {
