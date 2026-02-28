@@ -1,3 +1,4 @@
+// encode the position into a 64-bit integer
 class Random {
     private state: bigint
 
@@ -56,6 +57,7 @@ export class ZobristKeys {
     }
 }
 
+// XOR the piece, castling, en passant, and turn keys to compute the Zobrist hash
 export function computeZobristHash(chess: any, keys: ZobristKeys): bigint {
     let hash = 0n
 

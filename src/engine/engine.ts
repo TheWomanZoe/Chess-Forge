@@ -75,6 +75,7 @@ export const evalPosition = (board: any[], engineColor: 'w' | 'b',chessInstance?
     let finalScore =  engineColor === 'w' ? wTotal - bTotal : bTotal - wTotal
 
     if (hash !== undefined && chessInstance) {
+        // evaluate the complexity of the position
         let complexity = 0
 
         let pieceCount = 0
@@ -94,6 +95,7 @@ export const evalPosition = (board: any[], engineColor: 'w' | 'b',chessInstance?
         const complexityNoise = (complexity / 100) * 2
         const totalNoise = baseNoise + complexityNoise
 
+        // make noise consistent for the same position using the hash
         const noiseSeed = Number(hash % 1000n)
         const pseudoRandom = Math.sin(noiseSeed) * 10000
         const noise = (pseudoRandom - Math.floor(pseudoRandom)) * totalNoise * 2 - totalNoise
@@ -252,9 +254,8 @@ export function EngineMove(fen: string, maxDepth = 4) {
     //evaluate the final position after the best move and sends it back
     chess.move(removeNotation(best))
     const finalEval = evalPosition(chess.board(), engineColor)
+    console.log(evalPosition(chess.board(), engineColor, chess, computeZobristHash(chess, zobristKeys)))
     chess.undo()
-
-    console.log(finalEval)
 
     return {move: best, eval: finalEval}
 }

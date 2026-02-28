@@ -24,6 +24,7 @@ export class TranspositionTable {
         return Number(hash % BigInt(this.size))
     }
 
+    // Store an entry in the transposition table
     store(hash: bigint, depth: number, score: number, flag: TTFlag, bestMove?: string) {
         const index = this.getIndex(hash)
         const existing = this.table[index]
@@ -32,6 +33,7 @@ export class TranspositionTable {
             this.table[index] = { hash, depth, score, flag, bestMove }
     }
 
+    // Probe the transposition table for a given hash and depth, returning the stored score if valid
     probe(hash: bigint, depth: number, alpha: number, beta: number): number | null {
         const index = this.getIndex(hash)
         const entry = this.table[index]
@@ -58,6 +60,7 @@ export class TranspositionTable {
         return null
     }
 
+    // Retrieve the best move stored for a given hash, if available
     getBestMove(hash: bigint): string | null {
         const index = this.getIndex(hash)
         const entry = this.table[index]
@@ -68,21 +71,10 @@ export class TranspositionTable {
         return entry.bestMove || null
     }
 
+    // clears the transposition table
     clear() {
         this.table.fill(null)
         this.hits = 0
         this.misses = 0
-    }
-
-    getStats() {
-        const total = this.hits + this.misses
-        const hitRate = total > 0 ? (this.hits / total * 100).toFixed(1) : '0.0'
-
-        return {
-            hits: this.hits,
-            misses: this.misses,
-            hitRate: `${hitRate}%`,
-            size: this.size
-        }
     }
 }
